@@ -1,0 +1,50 @@
+name: Python checks
+on: [push, pull_request]
+permissions:
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+        - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+        - uses: actions/checkout@v3
+        - name: Set up Python 3
+          uses: actions/setup-python@v3
+          with:
+            python-version: 3.9
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            pip install -r requirements-dev.txt
+        - name: Lint with ruff
+          run: |
+            ruff .
+        - name: Check formatting with black
+          uses: psf/black@stable
+          with:
+            src: "."
+            options: "--check --verbose"
+        - name: Run unit tests
+          env:
+            DBHOST: localhost
+            DBNAME: postgres
+            DBUSER: postgres
+            DBPASS: postgres
+            SECRET_KEY: django-insecure-key-${{ github.run_id }}-${{ github.run_attempt }}
+          run: |
+            python3 -m pytest --cov-report=xml:coverage.xml --junitxml=pytest.xml
+        - name: Pytest coverage comment
+          uses: MishaKav/pytest-coverage-comment@main
+          if: github.event_name == 'pull_request'
+          with:
+              pytest-coverage-path: ./pytest-coverage.xml
+              junitxml-path: ./pytest.xml
